@@ -33,7 +33,7 @@ impl Post {
         let token = bot.token();
         let api_url = bot.api_url();
 
-        for entity in &self.entities {
+        for (index, entity) in self.entities.iter().enumerate() {
             let Some(file_id) = entity.file_id.as_ref() else {
                 continue;
             };
@@ -43,11 +43,7 @@ impl Post {
                 .join(&format!("file/bot{token}/{}", file.path))?
                 .to_string();
     
-            entities_data.push(format!(
-                "{}: {}",
-                entity.text.clone().unwrap_or_default(),
-                file_url
-            ));
+            entities_data.push(format!("{}: {file_url}", index + 1));
         }
 
         Ok(format!("Ссылки будут доступны в течение 1 часа.\n\n{}", entities_data.join("\n")))

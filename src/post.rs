@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use teloxide::{prelude::Requester, types::{ChatId, InlineKeyboardButton, InlineKeyboardMarkup, Message, MessageId}, Bot};
 use anyhow::Result;
 
-#[derive(Clone, Default, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct Post {
     pub sent_to: Vec<AdminRequest>,
     pub entities: Vec<PostEntity>,
@@ -29,7 +29,7 @@ impl Post {
     }
 
     pub async fn get_links(&self, bot: &Bot) -> Result<String> {
-        let mut entities_text = Vec::new();
+        let mut entities_data = Vec::new();
         let token = bot.token();
         let api_url = bot.api_url();
 
@@ -43,19 +43,19 @@ impl Post {
                 .join(&format!("file/bot{token}/{}", file.path))?
                 .to_string();
     
-            entities_text.push(format!(
+            entities_data.push(format!(
                 "{}: {}",
                 entity.text.clone().unwrap_or_default(),
                 file_url
             ));
         }
 
-        Ok(entities_text.join("\n"))
+        Ok(format!("Ссылки будут доступны в течение 1 часа.\n\n{}", entities_data.join("\n")))
     }
 
     pub async fn try_remove_post(&self, bot: &Bot) {
         for admin_request in &self.sent_to {
-            let result = bot.delete_messages(admin_request.admin_chat_id, [admin_request.forwarded_message_id, admin_request.message_id]).await;
+            let result = bot.delete_messages(admin_request.admin_chat_id, admin_request.get_message_ids()).await;
             if result.is_err() {
                 if bot.edit_message_reply_markup(admin_request.admin_chat_id, admin_request.message_id).await.is_err() {
                     warn!("Unable to update inline keyboard for message {} from admin {}", admin_request.message_id, admin_request.admin_chat_id);
@@ -68,18 +68,24 @@ impl Post {
     }
 }
 
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct PostEntity {
     pub message_id: MessageId,
     pub file_id: Option<String>,
     pub text: Option<String>,
 }
 
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct AdminRequest {
-    pub forwarded_message_id: MessageId,
+    pub forwarded_message_ids: Vec<MessageId>,
     pub message_id: MessageId,
     pub admin_chat_id: ChatId,
+}
+
+impl AdminRequest {
+    pub fn get_message_ids(&self) -> Vec<MessageId> {
+        self.forwarded_message_ids.clone().into_iter().chain(std::iter::once(self.message_id)).collect()
+    }
 }
 
 impl From<&Message> for PostEntity {
@@ -96,8 +102,8 @@ impl From<&Message> for PostEntity {
 pub enum PostAction {
     Approve((ChatId, i32)),
     Decline((ChatId, i32)),
+    GetFileLinks((ChatId, i32)),
     Ban((ChatId, i64)),
-    GetFileLinks(ChatId),
     SetAutoResponse,
 }
 
@@ -106,7 +112,7 @@ impl PostAction {
         Ok(
             InlineKeyboardMarkup::new(vec![
                 vec![
-                    InlineKeyboardButton::callback(variants::POST_GET_FILE_LINKS_TEXT, serde_json::to_string(&PostAction::GetFileLinks(chat_id))?),
+                    InlineKeyboardButton::callback(variants::POST_GET_FILE_LINKS_TEXT, serde_json::to_string(&PostAction::GetFileLinks((chat_id, post_id)))?),
                 ],
                 vec![
                     InlineKeyboardButton::callback(variants::POST_ACCEPT_BUTTON_TEXT, serde_json::to_string(&PostAction::Approve((chat_id, post_id)))?),

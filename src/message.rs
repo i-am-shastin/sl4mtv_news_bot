@@ -86,10 +86,10 @@ impl PostMessage for Message {
     fn get_user_keyboard(&self) -> InlineKeyboardMarkup {
         InlineKeyboardMarkup::new(vec![
             vec![
-                InlineKeyboardButton::callback(variants::POST_SEND_BUTTON_TEXT, serde_json::to_string(&(self.id, false)).unwrap())
+                InlineKeyboardButton::callback(variants::POST_SEND_BUTTON_TEXT, serde_json::to_string(&(self.id.0, false)).unwrap())
             ],
             vec![
-                InlineKeyboardButton::callback(variants::POST_SEND_ANONYMOUS_BUTTON_TEXT, serde_json::to_string(&(self.id, true)).unwrap())
+                InlineKeyboardButton::callback(variants::POST_SEND_ANONYMOUS_BUTTON_TEXT, serde_json::to_string(&(self.id.0, true)).unwrap())
             ]
         ])
     }

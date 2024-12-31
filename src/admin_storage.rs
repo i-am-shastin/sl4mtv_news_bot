@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use sqlx::sqlite::{SqlitePool, SqliteQueryResult};
 use anyhow::Result;
-use teloxide::types::{MessageId, User, UserId};
+use teloxide::types::{ChatId, MessageId, User, UserId};
 use chrono::Utc;
 
 pub struct AdminStorage {
@@ -109,28 +109,47 @@ CREATE TABLE IF NOT EXISTS admin_replies (
             .await
     }
 
-    pub async fn save_user_stats(&self, user: &User, is_accepted: bool) -> Result<SqliteQueryResult, sqlx::Error> {
+    pub async fn create_user_stats(&self, user: &User) -> Result<SqliteQueryResult, sqlx::Error> {
         sqlx::query(
             r#"
             INSERT INTO user_stats (
-                user_id, 
-                user_name, 
-                total_requests, 
-                requests_accepted, 
-                requests_declined,
-                last_responded_request_date
-            ) 
-            VALUES ($1, $2, 1, $3, $4, $5)
-            ON CONFLICT(user_id) DO UPDATE 
-            SET user_name=excluded.user_name,
-                total_requests=total_requests + 1,
-                requests_accepted=requests_accepted + $3,
-                requests_declined=requests_declined + $4,
-                last_responded_request_date=$5
+                user_id,
+                user_name,
+                total_requests,
+                requests_accepted,
+                requests_declined
+            )
+            VALUES ($1, $2, 0, 0, 0)
+            ON CONFLICT(user_id) DO UPDATE
+            SET user_name=excluded.user_name
             "#
         )
         .bind(user.id.0 as i64)
         .bind(user.username.as_ref().unwrap_or(&user.first_name))
+        .execute(&self.pool)
+        .await
+    }
+
+    pub async fn save_user_stats(&self, chat_id: &ChatId, is_accepted: bool) -> Result<SqliteQueryResult, sqlx::Error> {
+        sqlx::query(
+            r#"
+            INSERT INTO user_stats (
+                user_id,
+                user_name,
+                total_requests,
+                requests_accepted,
+                requests_declined,
+                last_responded_request_date
+            ) 
+            VALUES ($1, "Unknown", 1, $2, $3, $4)
+            ON CONFLICT(user_id) DO UPDATE
+            SET total_requests=total_requests + 1,
+                requests_accepted=requests_accepted + $2,
+                requests_declined=requests_declined + $3,
+                last_responded_request_date=$4
+            "#
+        )
+        .bind(chat_id.0)
         .bind(if is_accepted { 1 } else { 0 })
         .bind(if is_accepted { 0 } else { 1 })
         .bind(Utc::now())

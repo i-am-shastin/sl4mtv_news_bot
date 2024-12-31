@@ -203,6 +203,8 @@ async fn callback_handler(
         return Ok(());
     };
 
+    admin_storage.create_user_stats(&q.from).await?;
+
     let message_id = MessageId(post_id);
     let mut new_state = state.clone();
     let Some(post) = new_state.posts.get_mut(&reply_to.get_post_key()) else {
@@ -214,8 +216,8 @@ async fn callback_handler(
     let message_ids = post.get_message_ids();
 
     for admin_chat_id in config.admins {
-        let mut forwarded_messages = bot.forward_messages(admin_chat_id, msg.chat.id, message_ids.clone()).await?;
-        let Some(forwarded_message_id) = forwarded_messages.pop() else {
+        let forwarded_message_ids = bot.forward_messages(admin_chat_id, msg.chat.id, message_ids.clone()).await?;
+        let Some(forwarded_message_id) = forwarded_message_ids.last() else {
             continue;
         };
 
@@ -227,7 +229,7 @@ async fn callback_handler(
             };
 
         post.sent_to.push(AdminRequest {
-            forwarded_message_id,
+            forwarded_message_ids,
             message_id: message.id,
             admin_chat_id,
         });
@@ -258,30 +260,27 @@ async fn admin_callback_handler(
         return Ok(());
     };
 
-    let Some(reply_to_user) = &reply_to.from else {
-        error!("User is missing");
-        return Ok(());
-    };
-
     let (chat_id, mut response_text) = match post_action {
         PostAction::SetAutoResponse => {
             try_set_auto_response(bot, reply_to, admin_storage, config, &admin_id).await?;
             return Ok(());
         },
-        PostAction::GetFileLinks(chat_id) => {
-            let key = reply_to.get_post_key();
+        PostAction::GetFileLinks((chat_id, post_id)) => {
             let Some(current_user_state) = storage.clone().get_dialogue(chat_id).await? else {
                 warn!("User {chat_id} has no active dialogue");
                 return Ok(())
             };
-            if let Some(post) = current_user_state.posts.get(&key) {
-                bot.send_message(chat_id, post.get_links(bot).await?).await?;
-            };
+
+            if let Some(post_key) = current_user_state.find_post_key_by_message_id(MessageId(post_id)) {
+                if let Some(post) = current_user_state.posts.get(&post_key) {
+                    bot.send_message(admin_id, post.get_links(bot).await?).await?;
+                }
+            }
             return Ok(());
         },
         PostAction::Approve((chat_id, post_id)) => {
             bot.react_to_message_with(chat_id, MessageId(post_id), Reaction::Accepted).await?;
-            admin_storage.save_user_stats(reply_to_user, true).await?;
+            admin_storage.save_user_stats(&chat_id, true).await?;
             remove_post_from_user_state(bot, storage, chat_id, post_id).await?;
 
             info!("Admin {} approved post from user {}", admin_id, chat_id);
@@ -289,7 +288,7 @@ async fn admin_callback_handler(
         },
         PostAction::Decline((chat_id, post_id)) => {
             bot.react_to_message_with(chat_id, MessageId(post_id), Reaction::Declined).await?;
-            admin_storage.save_user_stats(reply_to_user, false).await?;
+            admin_storage.save_user_stats(&chat_id, false).await?;
             remove_post_from_user_state(bot, storage, chat_id, post_id).await?;
 
             info!("Admin {} declined post from user {}", admin_id, chat_id);

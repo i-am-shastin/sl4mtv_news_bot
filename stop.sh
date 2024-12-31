@@ -1,0 +1,1 @@
+pkill -SIGINT -f 'sl4mtv_news_bot' && while pgrep -f 'sl4mtv_news_bot'; do sleep 1; done;

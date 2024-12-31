@@ -14,18 +14,22 @@ pub struct UserStats {
 impl UserStats {
     pub fn format_rating(&self) -> String {
         if self.total_requests > 0 {
-            format!("{} (↑{}/↓{})", self.requests_accepted - self.requests_declined, self.requests_accepted, self.requests_declined)
+            teloxide::utils::markdown::escape(
+                &format!("{} (↑{}/↓{})", self.requests_accepted - self.requests_declined, self.requests_accepted, self.requests_declined)
+            )
         } else {
             "0".to_string()
         }
     }
 
     pub fn format(&self) -> String {
-        format!("@{}: {} (↑{}/↓{})",
-            self.user_name,
-            self.requests_accepted - self.requests_declined,
-            self.requests_accepted, 
-            self.requests_declined
+        teloxide::utils::markdown::escape(
+            &format!("@{}: {} (↑{}/↓{})",
+                self.user_name,
+                self.requests_accepted - self.requests_declined,
+                self.requests_accepted, 
+                self.requests_declined
+            )
         )
     }
 }

@@ -15,7 +15,7 @@ impl UserStats {
     pub fn format_rating(&self) -> String {
         if self.total_requests > 0 {
             teloxide::utils::markdown::escape(
-                &format!("{} (↑{}/↓{})", self.requests_accepted - self.requests_declined, self.requests_accepted, self.requests_declined)
+                &format!("Твой рейтинг: {} ({} принято, {} отклонено)", self.requests_accepted - self.requests_declined, self.requests_accepted, self.requests_declined)
             )
         } else {
             "0".to_string()

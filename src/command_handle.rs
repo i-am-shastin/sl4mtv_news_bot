@@ -115,6 +115,7 @@ pub async fn stats(
 
     bot.send_message(msg.chat.id, message_text)
         .reply_parameters(ReplyParameters::new(msg.id))
+        .parse_mode(ParseMode::MarkdownV2)
         .await?;
 
     Ok(())

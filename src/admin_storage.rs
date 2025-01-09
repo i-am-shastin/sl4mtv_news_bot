@@ -1,14 +1,18 @@
 use crate::user_stats::UserStats;
 
+use std::collections::hash_map::Entry;
 use std::sync::Arc;
 
 use sqlx::sqlite::{SqlitePool, SqliteQueryResult};
 use anyhow::Result;
 use teloxide::types::{ChatId, MessageId, User, UserId};
-use chrono::Utc;
+use chrono::{DateTime, Duration, Utc};
+use std::collections::HashMap;
+use std::sync::Mutex;
 
 pub struct AdminStorage {
     pool: SqlitePool,
+    responded_media_groups: Mutex<HashMap<String, DateTime<Utc>>>,
 }
 
 #[derive(sqlx::FromRow)]
@@ -21,6 +25,8 @@ struct AdminDbRow {
     reply_msg_id: i32,
     reply: String,
 }
+
+const MEDIA_GROUP_AUTO_RESPONSE_EXPIRE: Duration = Duration::hours(1);
 
 impl AdminStorage {
     pub async fn open(path: &str) -> Result<Arc<Self>> {
@@ -66,7 +72,10 @@ CREATE TABLE IF NOT EXISTS admin_replies (
         .execute(&pool)
         .await?;
 
-        Ok(Arc::new(Self { pool }))
+        Ok(Arc::new(Self {
+            pool,
+            responded_media_groups: Mutex::new(HashMap::new()),
+        }))
     }
 
     pub async fn save_admin_message(&self, admin_id: UserId, request_msg_id: MessageId, reply_msg_id: MessageId, reply: &str) -> Result<SqliteQueryResult, sqlx::Error> {
@@ -215,5 +224,22 @@ CREATE TABLE IF NOT EXISTS admin_replies (
             .await?;
 
         Ok(row.map(|r| r.data))
+    }
+
+    pub fn has_media_group_response(&self, media_group_id: &str) -> bool {
+        let mut responded_groups = self.responded_media_groups.lock().unwrap();
+        let now = Utc::now();
+
+        responded_groups.retain(|_, timestamp| {
+            now - *timestamp < MEDIA_GROUP_AUTO_RESPONSE_EXPIRE
+        });
+
+        match responded_groups.entry(media_group_id.to_string()) {
+            Entry::Occupied(_) => true,
+            Entry::Vacant(entry) => {
+                entry.insert(now);
+                false
+            }
+        }
     }
 }

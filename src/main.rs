@@ -31,7 +31,9 @@ use message::{MessageReaction, PostMessage, Reaction};
 #[command(rename_rule = "lowercase")]
 pub enum Command {
     Start,
+    #[command(description = "Team! Fall Back")]
     Cancel,
+    #[command(description = "Report In")]
     Stats
 }
 
@@ -79,7 +81,8 @@ async fn main() -> Result<()> {
         .branch(Update::filter_callback_query().endpoint(callback_handler))
         .branch(Update::filter_edited_message().endpoint(update_handle::on_edit_message))
         .branch(Update::filter_my_chat_member().endpoint(update_handle::on_my_chat_member))
-        .branch(Update::filter_message_reaction_updated().endpoint(update_handle::on_reaction_updated));
+        .branch(Update::filter_message_reaction_updated().endpoint(update_handle::on_reaction_updated))
+        .endpoint(update_handle::on_update);
 
     info!("Initializing update dispatcher");
     Dispatcher::builder(bot, handler)
@@ -411,6 +414,13 @@ async fn on_forwarded_message(
     }
 
     info!("Channel post received");
+    if let Some(media_group_id) = msg.media_group_id() {
+        if admin_storage.has_media_group_response(&media_group_id) {
+            info!("Already responded to media group {}", media_group_id);
+            return Ok(());
+        }
+    }
+
     let Some(response_data) = admin_storage.get_bot_auto_response().await? else {
         warn!("No auto response found");
         return Ok(());

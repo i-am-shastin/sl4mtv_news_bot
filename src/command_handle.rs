@@ -4,7 +4,7 @@ use crate::{admin_storage::AdminStorage, config::Config, dialogue_state::Dialogu
 
 use std::sync::Arc;
 use chrono::Utc;
-use teloxide::{prelude::*, types::{Message, ParseMode, ReplyParameters}, Bot};
+use teloxide::{prelude::*, types::{Message, ParseMode, ReplyParameters}, utils::markdown, Bot};
 
 pub async fn start(
     bot: Bot,
@@ -113,7 +113,7 @@ pub async fn stats(
         }
     };
 
-    bot.send_message(msg.chat.id, message_text)
+    bot.send_message(msg.chat.id, markdown::escape(&message_text))
         .reply_parameters(ReplyParameters::new(msg.id))
         .parse_mode(ParseMode::MarkdownV2)
         .await?;

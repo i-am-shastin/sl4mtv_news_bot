@@ -54,3 +54,7 @@ pub async fn on_my_chat_member(
     }
     Ok(())
 }
+
+pub async fn on_update() -> HandlerResult {
+    Ok(())
+}

@@ -222,6 +222,11 @@ async fn callback_handler(
         return Ok(())
     };
 
+    if post.sent_to.len() > 0 {
+        info!("User {} already sent post {} to admins", msg.chat.id, post_id);
+        return Ok(());
+    }
+
     let author_info = is_anonymous.then_some(variants::ADMIN_ANONYMOUS_POST_MESSAGE.to_string()).unwrap_or_default();
     let post_text = format!("{}\n\n{author_info}{}", post.get_text(), variants::POST_PENDING_ACTION_MESSAGE);
     let message_ids = post.get_message_ids();

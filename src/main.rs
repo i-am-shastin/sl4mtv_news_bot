@@ -219,7 +219,9 @@ async fn callback_handler(
     let message_ids = post.get_message_ids();
 
     for admin_chat_id in config.admins {
-        let forwarded_message_ids = bot.forward_messages(admin_chat_id, msg.chat.id, message_ids.clone()).await?;
+        let Ok(forwarded_message_ids) = bot.forward_messages(admin_chat_id, msg.chat.id, message_ids.clone()).await else {
+            continue;
+        };
         let Some(forwarded_message_id) = forwarded_message_ids.last() else {
             continue;
         };

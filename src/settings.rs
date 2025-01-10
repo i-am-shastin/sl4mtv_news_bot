@@ -3,7 +3,7 @@ use anyhow::Result;
 use teloxide::types::{ChatId, UserId};
 
 #[derive(Clone)]
-pub struct Config {
+pub struct AppSettings {
     pub admins: Vec<ChatId>,
     pub db_filename: String,
     pub admin_db_filename: String,
@@ -11,7 +11,7 @@ pub struct Config {
     pub max_sent_posts: usize,
 }
 
-impl Config {
+impl AppSettings {
     pub fn from_env() -> Result<Self> {
         Ok(Self {
             admins: env::var("BOT_ADMINS")?.split(',').map(|id| id.parse::<i64>().map(|id| ChatId(id))).collect::<Result<Vec<ChatId>, _>>()?,

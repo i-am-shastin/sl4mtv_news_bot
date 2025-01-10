@@ -11,13 +11,13 @@ use std::collections::HashMap;
 use std::sync::Mutex;
 
 pub struct AdminStorage {
-    pool: SqlitePool,
+    pub pool: SqlitePool,
     responded_media_groups: Mutex<HashMap<String, DateTime<Utc>>>,
 }
 
 #[derive(sqlx::FromRow)]
-struct BotAutoResponseRow {
-    data: String,
+pub struct BotDataRow {
+    pub data: String,
 }
 
 #[derive(sqlx::FromRow)]
@@ -50,6 +50,17 @@ CREATE TABLE IF NOT EXISTS user_stats (
         sqlx::query(
             "
 CREATE TABLE IF NOT EXISTS bot_auto_response (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    data BLOB NOT NULL
+);
+            "
+        )
+        .execute(&pool)
+        .await?;
+
+        sqlx::query(
+            "
+CREATE TABLE IF NOT EXISTS bot_configuration (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     data BLOB NOT NULL
 );
@@ -219,7 +230,7 @@ CREATE TABLE IF NOT EXISTS admin_replies (
     }
 
     pub async fn get_bot_auto_response(&self) -> Result<Option<String>> {
-        let row = sqlx::query_as::<_, BotAutoResponseRow>("SELECT data FROM bot_auto_response ORDER BY id DESC LIMIT 1")
+        let row = sqlx::query_as::<_, BotDataRow>("SELECT data FROM bot_auto_response ORDER BY id DESC LIMIT 1")
             .fetch_optional(&self.pool)
             .await?;
 

@@ -1,6 +1,6 @@
 use log::{error, info};
 
-use crate::{admin_storage::AdminStorage, config::Config, dialogue_state::DialogueState, message::PostMessage, types::{HandlerResult, MyDialogue}, variants};
+use crate::{admin_storage::AdminStorage, bot_configuration::BotConfiguration, settings::AppSettings, dialogue_state::DialogueState, message::{MessageReaction, PostMessage, Reaction}, types::{HandlerResult, MyDialogue}, variants, Command};
 
 use std::sync::Arc;
 use chrono::Utc;
@@ -11,7 +11,7 @@ pub async fn start(
     dialogue: MyDialogue,
     state: DialogueState,
     msg: Message,
-    config: Config,
+    settings: AppSettings,
 ) -> HandlerResult {
     let Some(user) = &msg.from else {
         error!("Start command received, but user is missing for some reason. Message: {:?}", msg);
@@ -29,7 +29,7 @@ pub async fn start(
         info!("User {} [{}] unbanned bot", msg.get_from_username()?, user.id);
     }
 
-    let text = if config.is_admin(user.id) {
+    let text = if settings.is_admin(user.id) {
         variants::ADMIN_START_INTRO_MESSAGE
     } else if state.bot_is_banned {
         variants::START_INTRO_MESSAGE_AFTER_BAN()
@@ -71,7 +71,7 @@ pub async fn stats(
     dialogue: MyDialogue,
     state: DialogueState,
     msg: Message,
-    config: Config,
+    settings: AppSettings,
     admin_storage: Arc<AdminStorage>,
 ) -> HandlerResult {
     if state.is_ban_active() {
@@ -83,7 +83,7 @@ pub async fn stats(
         return Ok(());
     };
 
-    if config.is_admin(user.id) {
+    if settings.is_admin(user.id) {
         let top_n = msg.text()
             .and_then(|text| text.split_whitespace().nth(1))
             .and_then(|n| n.parse::<u8>().ok())
@@ -117,6 +117,48 @@ pub async fn stats(
         .reply_parameters(ReplyParameters::new(msg.id))
         .parse_mode(ParseMode::MarkdownV2)
         .await?;
+
+    Ok(())
+}
+
+pub async fn action(
+    bot: Bot,
+    state: DialogueState,
+    msg: Message,
+    cmd: Command,
+    settings: AppSettings,
+    admin_storage: Arc<AdminStorage>,
+    mut bot_configuration: BotConfiguration,
+) -> HandlerResult {
+    if state.is_ban_active() {
+        return Ok(())
+    }
+
+    let Some(user) = &msg.from else {
+        error!("Command received, but user is missing for some reason. Message: {:?}", msg);
+        return Ok(())
+    };
+
+    if !settings.is_admin(user.id) {
+        return Ok(())
+    }
+
+    match cmd {
+        Command::Every(count) => {
+            let reaction = if count == 0 {
+                info!("Admin {} disabled auto comment", user.id);
+                Reaction::Salute
+            } else {
+                info!("Admin {} set auto comment every {} posts", user.id, count);
+                Reaction::Okay
+            };
+
+            bot_configuration.comment_each_n_post = count;
+            bot_configuration.to_db(&admin_storage.pool).await?;
+            bot.react_to_message_with(msg.chat.id, msg.id, reaction).await?;
+        },
+        _ => {}
+    }
 
     Ok(())
 }

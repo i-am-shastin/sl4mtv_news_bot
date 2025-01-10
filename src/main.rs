@@ -1,6 +1,6 @@
 pub mod types;
 pub mod variants;
-pub mod config;
+pub mod settings;
 pub mod dialogue_state;
 pub mod post;
 pub mod user_stats;
@@ -8,11 +8,12 @@ pub mod admin_storage;
 pub mod message;
 pub mod command_handle;
 pub mod update_handle;
+pub mod bot_configuration;
 
 use dptree::case;
 use log::{error, info, warn};
 
-use std::sync::Arc;
+use std::sync::{atomic::{AtomicU32, Ordering}, Arc};
 use teloxide::{
     dispatching::dialogue::{
         self, serializer::Json, ErasedStorage, SqliteStorage, Storage
@@ -21,11 +22,12 @@ use teloxide::{
 use anyhow::{anyhow, Result};
 use chrono::{Duration, Utc};
 use admin_storage::AdminStorage;
-use config::Config;
+use settings::AppSettings;
 use dialogue_state::DialogueState;
 use post::{AdminRequest, PostAction};
 use types::{HandlerResult, MyDialogue, MyStorage};
 use message::{MessageReaction, PostMessage, Reaction};
+use bot_configuration::BotConfiguration;
 
 #[derive(Clone, BotCommands)]
 #[command(rename_rule = "lowercase")]
@@ -34,7 +36,9 @@ pub enum Command {
     #[command(description = "Team! Fall Back")]
     Cancel,
     #[command(description = "Report In")]
-    Stats
+    Stats,
+    #[command(description = "Send auto comment every N posts")]
+    Every(u32)
 }
 
 const LOG4RS_CONFIG: &str = if cfg!(debug_assertions) {
@@ -55,21 +59,25 @@ async fn main() -> Result<()> {
     let bot_info = bot.get_me().await?;
     info!("{} is running", bot_info.full_name());
 
-    let config = Config::from_env()?;
-    if config.admins.is_empty() {
+    let settings = AppSettings::from_env()?;
+    if settings.admins.is_empty() {
         return Err(anyhow!("No admins found. Do you have ADMIN_CHAT_ID in environment variables?"));
     }
 
-    let storage: MyStorage = SqliteStorage::open(&config.db_filename, Json).await.unwrap().erase();
-    info!("Bot admins are: {:?}, database loaded from: {}", config.admins, config.db_filename);
+    let storage: MyStorage = SqliteStorage::open(&settings.db_filename, Json).await.unwrap().erase();
+    info!("Bot admins are: {:?}, database loaded from: {}", settings.admins, settings.db_filename);
 
-    let admin_storage = AdminStorage::open(&config.admin_db_filename).await?;
-    info!("Admin database loaded from: {}", config.admin_db_filename);
+    let admin_storage = AdminStorage::open(&settings.admin_db_filename).await?;
+    info!("Admin database loaded from: {}", settings.admin_db_filename);
+
+    let bot_configuration = BotConfiguration::from_db(&admin_storage.pool).await?;
+    let channel_posts_counter = Arc::new(AtomicU32::new(0));
 
     let command_handler = teloxide::filter_command::<Command, _>()
         .branch(case![Command::Start].endpoint(command_handle::start))
         .branch(case![Command::Cancel].endpoint(command_handle::cancel))
-        .branch(case![Command::Stats].endpoint(command_handle::stats));
+        .branch(case![Command::Stats].endpoint(command_handle::stats))
+        .endpoint(command_handle::action);
 
     let handler = dialogue::enter::<Update, ErasedStorage<DialogueState>, DialogueState, _>()
         .branch(
@@ -86,7 +94,7 @@ async fn main() -> Result<()> {
 
     info!("Initializing update dispatcher");
     Dispatcher::builder(bot, handler)
-        .dependencies(dptree::deps![storage, admin_storage, config])
+        .dependencies(dptree::deps![storage, admin_storage, settings, bot_configuration, channel_posts_counter])
         .enable_ctrlc_handler()
         .build()
         .dispatch()
@@ -102,7 +110,7 @@ async fn on_message(
     state: DialogueState,
     msg: Message,
     admin_storage: Arc<AdminStorage>,
-    config: Config,
+    settings: AppSettings,
 ) -> HandlerResult {
     if !msg.chat.is_private() {
         return Ok(())
@@ -117,7 +125,7 @@ async fn on_message(
         return Ok(())
     }
 
-    if config.is_admin(user.id) {
+    if settings.is_admin(user.id) {
         return on_admin_message(bot, &msg, user.id, admin_storage).await;
     }
 
@@ -127,7 +135,7 @@ async fn on_message(
     }
 
     // TODO: Fix when media group is sent
-    if state.posts.len() >= config.max_draft_posts {
+    if state.posts.len() >= settings.max_draft_posts {
         bot.send_message(msg.chat.id, variants::MAX_DRAFT_POSTS_LIMIT_MESSAGE()).await?;
         return Ok(())
     }
@@ -170,7 +178,7 @@ async fn callback_handler(
     bot: Bot,
     dialogue: MyDialogue,
     state: DialogueState,
-    config: Config,
+    settings: AppSettings,
     storage: MyStorage,
     admin_storage: Arc<AdminStorage>,
     q: CallbackQuery,
@@ -191,11 +199,11 @@ async fn callback_handler(
         return Ok(())
     };
 
-    if config.is_admin(q.from.id) {
-        return admin_callback_handler(&bot, &config, storage, admin_storage, q.from.id, query_data, msg, reply_to).await;
+    if settings.is_admin(q.from.id) {
+        return admin_callback_handler(&bot, &settings, storage, admin_storage, q.from.id, query_data, msg, reply_to).await;
     }
 
-    if state.get_sent_posts_count() >= config.max_sent_posts {
+    if state.get_sent_posts_count() >= settings.max_sent_posts {
         bot.send_message(msg.chat.id, variants::MAX_SENT_POSTS_LIMIT_MESSAGE())
             .reply_parameters(ReplyParameters::new(msg.id))
             .await?;
@@ -218,7 +226,7 @@ async fn callback_handler(
     let post_text = format!("{}\n\n{author_info}{}", post.get_text(), variants::POST_PENDING_ACTION_MESSAGE);
     let message_ids = post.get_message_ids();
 
-    for admin_chat_id in config.admins {
+    for admin_chat_id in settings.admins {
         let Ok(forwarded_message_ids) = bot.forward_messages(admin_chat_id, msg.chat.id, message_ids.clone()).await else {
             continue;
         };
@@ -252,7 +260,7 @@ async fn callback_handler(
 
 async fn admin_callback_handler(
     bot: &Bot,
-    config: &Config,
+    settings: &AppSettings,
     storage: MyStorage,
     admin_storage: Arc<AdminStorage>,
     admin_id: UserId,
@@ -267,7 +275,7 @@ async fn admin_callback_handler(
 
     let (chat_id, mut response_text) = match post_action {
         PostAction::SetAutoResponse => {
-            try_set_auto_response(bot, reply_to, admin_storage, config, &admin_id).await?;
+            try_set_auto_response(bot, reply_to, admin_storage, settings, &admin_id).await?;
             return Ok(());
         },
         PostAction::GetFileLinks((chat_id, post_id)) => {
@@ -357,7 +365,7 @@ async fn try_set_auto_response(
     bot: &Bot,
     reply_to: &Message,
     admin_storage: Arc<AdminStorage>,
-    config: &Config,
+    settings: &AppSettings,
     admin_id: &UserId,
 ) -> Result<()> {
     let MessageKind::Common(common) = &reply_to.kind else {
@@ -386,7 +394,7 @@ async fn try_set_auto_response(
         })
         .collect::<Vec<_>>();
 
-    for admin_chat_id in &config.admins {
+    for admin_chat_id in &settings.admins {
         let mut auto_message = bot.send_message(admin_chat_id.clone(), &message_text).entities(updated_entities.clone());
         auto_message.link_preview_options = media_text.link_preview_options.clone();
 
@@ -403,6 +411,8 @@ async fn on_forwarded_message(
     bot: Bot,
     msg: Message,
     admin_storage: Arc<AdminStorage>,
+    channel_posts_counter: Arc<AtomicU32>,
+    bot_configuration: BotConfiguration,
 ) -> HandlerResult {
     if msg.chat.is_private() {
         bot.send_message(msg.chat.id, variants::FORWARDING_NOT_ALLOWED_MESSAGE())
@@ -429,13 +439,16 @@ async fn on_forwarded_message(
     };
 
     let response = serde_json::from_str::<MediaText>(&response_data)?;
-    let mut auto_message = bot.send_message(msg.chat.id, response.text);
-    auto_message.link_preview_options = response.link_preview_options;
-    auto_message
-        .entities(response.entities)
-        .reply_parameters(ReplyParameters::new(msg.id))
-        .await?;
 
-    info!("Auto response message sent");
+    if bot_configuration.should_comment(channel_posts_counter.fetch_add(1, Ordering::Relaxed)) {
+        let mut auto_message = bot.send_message(msg.chat.id, response.text);
+        auto_message.link_preview_options = response.link_preview_options;
+        auto_message
+            .entities(response.entities)
+            .reply_parameters(ReplyParameters::new(msg.id))
+            .await?;
+        info!("Auto response message sent");
+    }
+
     Ok(())
 }

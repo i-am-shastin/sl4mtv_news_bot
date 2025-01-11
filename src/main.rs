@@ -100,7 +100,7 @@ async fn main() -> Result<()> {
 
     info!("Initializing update dispatcher");
     Dispatcher::builder(bot, handler)
-        .dependencies(dptree::deps![storage, admin_storage, settings, bot_configuration, channel_posts_counter])
+        .dependencies(dptree::deps![storage, admin_storage, settings, Arc::new(bot_configuration), channel_posts_counter])
         .enable_ctrlc_handler()
         .build()
         .dispatch()
@@ -117,7 +117,7 @@ async fn on_message(
     msg: Message,
     admin_storage: Arc<AdminStorage>,
     settings: AppSettings,
-    bot_configuration: BotConfiguration,
+    bot_configuration: Arc<BotConfiguration>,
 ) -> HandlerResult {
     if !msg.chat.is_private() {
         return Ok(())
@@ -165,7 +165,7 @@ async fn on_admin_message(
     msg: &Message,
     admin_id: UserId,
     admin_storage: Arc<AdminStorage>,
-    bot_configuration: BotConfiguration,
+    bot_configuration: Arc<BotConfiguration>,
 ) -> HandlerResult {
     match msg.reply_to_message() {
         Some(reply_to) if reply_to.reply_markup().is_some() && msg.text().is_some() => {
@@ -174,10 +174,11 @@ async fn on_admin_message(
         }
         _ => {
             if msg.text().is_some_and(|text| text.eq_ignore_ascii_case("/every")) {
-                let reply_text = if bot_configuration.comment_each_n_post == 0 {
+                let comment_each_n_post = bot_configuration.get_comment_each_n_post();
+                let reply_text = if comment_each_n_post == 0 {
                     "Сейчас я не комментирую посты.".to_string()
                 } else {
-                    format!("Сейчас я комментирую каждый {} пост.", bot_configuration.comment_each_n_post)
+                    format!("Сейчас я комментирую каждый {} пост.", comment_each_n_post)
                 };
                 bot.send_message(msg.chat.id, reply_text)
                     .reply_parameters(ReplyParameters::new(msg.id))
@@ -440,7 +441,7 @@ async fn on_forwarded_message(
     msg: Message,
     admin_storage: Arc<AdminStorage>,
     channel_posts_counter: Arc<AtomicU32>,
-    bot_configuration: BotConfiguration,
+    bot_configuration: Arc<BotConfiguration>,
 ) -> HandlerResult {
     if msg.chat.is_private() {
         bot.send_message(msg.chat.id, variants::FORWARDING_NOT_ALLOWED_MESSAGE())

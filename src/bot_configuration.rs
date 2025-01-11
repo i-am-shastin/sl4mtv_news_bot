@@ -1,21 +1,22 @@
 use log::{info, warn};
 
+use std::sync::Mutex;
 use sqlx::SqlitePool;
 use anyhow::Result;
 use teloxide::{prelude::Requester, types::ChatId, Bot};
 
 use crate::{admin_storage::BotDataRow, types::MyStorage, user_stats::UserStats};
 
-#[derive(Clone, serde::Serialize, serde::Deserialize)]
+#[derive(serde::Serialize, serde::Deserialize)]
 pub struct BotConfiguration {
-    pub comment_each_n_post: u32,
+    pub comment_each_n_post: Mutex<u32>,
     pub apply_fix: bool,
 }
 
 impl Default for BotConfiguration {
     fn default() -> Self {
         Self {
-            comment_each_n_post: 7,
+            comment_each_n_post: Mutex::new(7),
             apply_fix: true,
         }
     }
@@ -76,7 +77,16 @@ impl BotConfiguration {
         )
     }
 
+    pub fn get_comment_each_n_post(&self) -> u32 {
+        *self.comment_each_n_post.lock().unwrap()
+    }
+
+    pub fn set_comment_each_n_post(&self, count: u32) {
+        *self.comment_each_n_post.lock().unwrap() = count;
+    }
+
     pub fn should_comment(&self, channel_posts_counter: u32) -> bool {
-        self.comment_each_n_post > 0 && channel_posts_counter % self.comment_each_n_post == 0
+        let comment_each_n_post = self.get_comment_each_n_post();
+        comment_each_n_post > 0 && channel_posts_counter % comment_each_n_post == 0
     }
 }

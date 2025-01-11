@@ -128,7 +128,7 @@ pub async fn action(
     cmd: Command,
     settings: AppSettings,
     admin_storage: Arc<AdminStorage>,
-    mut bot_configuration: BotConfiguration,
+    bot_configuration: Arc<BotConfiguration>,
 ) -> HandlerResult {
     if state.is_ban_active() {
         return Ok(())
@@ -153,7 +153,7 @@ pub async fn action(
                 Reaction::Okay
             };
 
-            bot_configuration.comment_each_n_post = count;
+            bot_configuration.set_comment_each_n_post(count);
             bot_configuration.to_db(&admin_storage.pool).await?;
             bot.react_to_message_with(msg.chat.id, msg.id, reaction).await?;
         },

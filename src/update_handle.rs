@@ -1,6 +1,6 @@
 use crate::{dialogue_state::DialogueState, types::{HandlerResult, MyDialogue}, variants};
 
-use log::info;
+use log::debug;
 use teloxide::{prelude::*, types::{ChatMemberUpdated, Message, MessageReactionCountUpdated, MessageReactionUpdated}};
 
 pub async fn on_edit_message(
@@ -59,7 +59,7 @@ pub async fn on_my_chat_member(
 pub async fn on_reaction_count_updated(
     reaction_count_update: MessageReactionCountUpdated,
 ) -> HandlerResult {
-    info!("Reaction count for message {} updated: {}", reaction_count_update.message_id, reaction_count_update.reactions.iter().fold(0, |acc, r| acc + r.total_count));
+    debug!("Reaction count for message {} updated: {}", reaction_count_update.message_id, reaction_count_update.reactions.iter().fold(0, |acc, r| acc + r.total_count));
     Ok(())
 }
 

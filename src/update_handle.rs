@@ -1,6 +1,7 @@
 use crate::{dialogue_state::DialogueState, types::{HandlerResult, MyDialogue}, variants};
 
-use teloxide::{prelude::*, types::{Message, MessageReactionUpdated, ChatMemberUpdated}};
+use log::info;
+use teloxide::{prelude::*, types::{ChatMemberUpdated, Message, MessageReactionCountUpdated, MessageReactionUpdated}};
 
 pub async fn on_edit_message(
     bot: Bot,
@@ -52,6 +53,13 @@ pub async fn on_my_chat_member(
         new_state.bot_is_banned = true;
         dialogue.update(new_state).await?;
     }
+    Ok(())
+}
+
+pub async fn on_reaction_count_updated(
+    reaction_count_update: MessageReactionCountUpdated,
+) -> HandlerResult {
+    info!("Reaction count for message {} updated: {}", reaction_count_update.message_id, reaction_count_update.reactions.iter().fold(0, |acc, r| acc + r.total_count));
     Ok(())
 }
 

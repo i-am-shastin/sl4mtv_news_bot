@@ -90,6 +90,7 @@ async fn main() -> Result<()> {
         .branch(Update::filter_edited_message().endpoint(update_handle::on_edit_message))
         .branch(Update::filter_my_chat_member().endpoint(update_handle::on_my_chat_member))
         .branch(Update::filter_message_reaction_updated().endpoint(update_handle::on_reaction_updated))
+        .branch(Update::filter_message_reaction_count_updated().endpoint(update_handle::on_reaction_count_updated))
         .endpoint(update_handle::on_update);
 
     info!("Initializing update dispatcher");

@@ -193,14 +193,14 @@ CREATE TABLE IF NOT EXISTS admin_replies (
             .await?;
 
         let top_users_by_accepted = sqlx::query_as::<_, UserStats>(
-                "SELECT * FROM user_stats WHERE total_requests > 0 ORDER BY requests_accepted DESC LIMIT ?"
+                "SELECT * FROM user_stats WHERE total_requests > 0 AND requests_accepted > 0 ORDER BY requests_accepted DESC LIMIT ?"
             )
             .bind(top_n)
             .fetch_all(&self.pool)
             .await?;
 
         let top_users_by_declined = sqlx::query_as::<_, UserStats>(
-                "SELECT * FROM user_stats WHERE total_requests > 0 ORDER BY requests_declined DESC LIMIT ?"
+                "SELECT * FROM user_stats WHERE total_requests > 0 AND requests_declined > 0 ORDER BY requests_declined DESC LIMIT ?"
             )
             .bind(top_n)
             .fetch_all(&self.pool)

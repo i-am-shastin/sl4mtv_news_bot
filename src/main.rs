@@ -117,6 +117,7 @@ async fn on_message(
     msg: Message,
     admin_storage: Arc<AdminStorage>,
     settings: AppSettings,
+    bot_configuration: BotConfiguration,
 ) -> HandlerResult {
     if !msg.chat.is_private() {
         return Ok(())
@@ -132,7 +133,7 @@ async fn on_message(
     }
 
     if settings.is_admin(user.id) {
-        return on_admin_message(bot, &msg, user.id, admin_storage).await;
+        return on_admin_message(bot, &msg, user.id, admin_storage, bot_configuration).await;
     }
 
     if !msg.is_supported_type() {
@@ -164,6 +165,7 @@ async fn on_admin_message(
     msg: &Message,
     admin_id: UserId,
     admin_storage: Arc<AdminStorage>,
+    bot_configuration: BotConfiguration,
 ) -> HandlerResult {
     match msg.reply_to_message() {
         Some(reply_to) if reply_to.reply_markup().is_some() && msg.text().is_some() => {
@@ -171,6 +173,18 @@ async fn on_admin_message(
             bot.react_to_message_with(msg.chat.id, msg.id, Reaction::Okay).await?;
         }
         _ => {
+            if msg.text().is_some_and(|text| text.eq_ignore_ascii_case("/every")) {
+                let reply_text = if bot_configuration.comment_each_n_post == 0 {
+                    "Сейчас я не комментирую посты.".to_string()
+                } else {
+                    format!("Сейчас я комментирую каждый {} пост.", bot_configuration.comment_each_n_post)
+                };
+                bot.send_message(msg.chat.id, reply_text)
+                    .reply_parameters(ReplyParameters::new(msg.id))
+                    .await?;
+                return Ok(());
+            }
+
             bot.send_message(msg.chat.id, variants::ADMIN_UPDATE_AUTOPOST_MESSAGE)
                 .reply_parameters(ReplyParameters::new(msg.id))
                 .reply_markup(msg.get_admin_keyboard())

@@ -14,9 +14,14 @@ pub struct UserStats {
 impl UserStats {
     pub fn format_rating(&self) -> String {
         if self.total_requests > 0 {
-            format!("Твой рейтинг: {} ({} принято, {} отклонено)", self.requests_accepted as i32 - self.requests_declined as i32, self.requests_accepted, self.requests_declined)
+            format!(
+                "Твой рейтинг: {} ({} принято, {} отклонено)",
+                self.requests_accepted as i32 - self.requests_declined as i32,
+                self.requests_accepted,
+                self.requests_declined
+            )
         } else {
-            "0".to_string()
+            "Твой рейтинг пока что равен нулю.".to_string()
         }
     }
 

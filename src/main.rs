@@ -70,8 +70,13 @@ async fn main() -> Result<()> {
     let admin_storage = AdminStorage::open(&settings.admin_db_filename).await?;
     info!("Admin database loaded from: {}", settings.admin_db_filename);
 
-    let bot_configuration = BotConfiguration::from_db(&admin_storage.pool).await?;
+    let mut bot_configuration = BotConfiguration::from_db(&admin_storage.pool).await?;
     let channel_posts_counter = Arc::new(AtomicU32::new(0));
+
+    if bot_configuration.should_apply_fix() {
+        info!("Applying fix");
+        bot_configuration.apply_fix(&bot, &admin_storage.pool, &storage).await?;
+    }
 
     let command_handler = teloxide::filter_command::<Command, _>()
         .branch(case![Command::Start].endpoint(command_handle::start))
@@ -234,9 +239,11 @@ async fn callback_handler(
 
     for admin_chat_id in settings.admins {
         let Ok(forwarded_message_ids) = bot.forward_messages(admin_chat_id, msg.chat.id, message_ids.clone()).await else {
+            error!("Failed to forward messages to admin {}", admin_chat_id);
             continue;
         };
         let Some(forwarded_message_id) = forwarded_message_ids.last() else {
+            error!("No forwarded message ids found for admin {}", admin_chat_id);
             continue;
         };
 
@@ -244,6 +251,7 @@ async fn callback_handler(
             .reply_parameters(ReplyParameters::new(forwarded_message_id.clone()))
             .reply_markup(PostAction::get_keyboard_for_message(msg.chat.id, post_id)?)
             .await else {
+                error!("Failed to send message to admin {}", admin_chat_id);
                 continue;
             };
 

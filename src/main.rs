@@ -246,6 +246,8 @@ async fn callback_handler(
     if post.sent_to.len() > 0 {
         info!("User {} already sent post {} to admins", msg.chat.id, post_id);
         return Ok(());
+    } else {
+        info!("Trying to send post {} from user {} to admins, is_anonymous: {}", post_id, msg.chat.id, is_anonymous);
     }
 
     let author_info = is_anonymous.then_some(variants::ADMIN_ANONYMOUS_POST_MESSAGE.to_string()).unwrap_or_default();
@@ -325,7 +327,7 @@ async fn admin_callback_handler(
             admin_storage.save_user_stats(&chat_id, true).await?;
             remove_post_from_user_state(bot, storage, chat_id, post_id).await?;
 
-            info!("Admin {} approved post from user {}", admin_id, chat_id);
+            info!("Admin {} approved post {} from user {}", admin_id, post_id, chat_id);
             (chat_id, variants::POST_ACCEPTED_MESSAGE().to_string())
         },
         PostAction::Decline((chat_id, post_id)) => {
@@ -333,7 +335,7 @@ async fn admin_callback_handler(
             admin_storage.save_user_stats(&chat_id, false).await?;
             remove_post_from_user_state(bot, storage, chat_id, post_id).await?;
 
-            info!("Admin {} declined post from user {}", admin_id, chat_id);
+            info!("Admin {} declined post {} from user {}", admin_id, post_id, chat_id);
             (chat_id, variants::POST_DECLINED_MESSAGE().to_string())
         },
         PostAction::Ban((chat_id, duration)) => {
@@ -468,8 +470,9 @@ async fn on_forwarded_message(
     };
 
     let response = serde_json::from_str::<MediaText>(&response_data)?;
+    let current_posts_count = channel_posts_counter.fetch_add(1, Ordering::Relaxed);
 
-    if bot_configuration.should_comment(channel_posts_counter.fetch_add(1, Ordering::Relaxed)) {
+    if bot_configuration.should_comment(current_posts_count) {
         let mut auto_message = bot.send_message(msg.chat.id, response.text);
         auto_message.link_preview_options = response.link_preview_options;
         auto_message
@@ -477,6 +480,8 @@ async fn on_forwarded_message(
             .reply_parameters(ReplyParameters::new(msg.id))
             .await?;
         info!("Auto response message sent");
+    } else {
+        info!("Auto response skipped, post counter equals to {}", current_posts_count);
     }
 
     Ok(())

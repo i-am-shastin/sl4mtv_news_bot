@@ -143,21 +143,18 @@ pub async fn action(
         return Ok(())
     }
 
-    match cmd {
-        Command::Every(count) => {
-            let reaction = if count == 0 {
-                info!("Admin {} disabled auto comment", user.id);
-                Reaction::Salute
-            } else {
-                info!("Admin {} set auto comment every {} posts", user.id, count);
-                Reaction::Okay
-            };
+    if let Command::Every(count) = cmd {
+        let reaction = if count == 0 {
+            info!("Admin {} disabled auto comment", user.id);
+            Reaction::Salute
+        } else {
+            info!("Admin {} set auto comment every {} posts", user.id, count);
+            Reaction::Okay
+        };
 
-            bot_configuration.set_comment_each_n_post(count);
-            bot_configuration.to_db(&admin_storage.pool).await?;
-            bot.react_to_message_with(msg.chat.id, msg.id, reaction).await?;
-        },
-        _ => {}
+        bot_configuration.set_comment_each_n_post(count);
+        bot_configuration.to_db(&admin_storage.pool).await?;
+        bot.react_to_message_with(msg.chat.id, msg.id, reaction).await?;
     }
 
     Ok(())

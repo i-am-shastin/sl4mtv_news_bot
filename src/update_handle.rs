@@ -17,7 +17,7 @@ pub async fn on_edit_message(
     }
 
     for post in state.posts.values() {
-        if post.sent_to.len() > 0 && post.entities.iter().any(|e| e.message_id == msg.id) {
+        if !post.sent_to.is_empty() && post.entities.iter().any(|e| e.message_id == msg.id) {
             bot.send_message(msg.chat.id, variants::POST_EDITED_WARNING_MESSAGE()).await?;
             return Ok(());
         }

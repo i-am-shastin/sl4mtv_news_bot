@@ -134,6 +134,8 @@ pub const POST_BAN_BUTTON_7D_TEXT: &str = "Бан (неделя)";
 pub const POST_BAN_BUTTON_30D_TEXT: &str = "Бан (месяц)";
 pub const POST_BAN_BUTTON_INFINITE_TEXT: &str = "Бан (∞)";
 
+pub const UNSUPPORTED_REPLY_TYPE_TEXT: &str = "Пока что я умею отправлять пользователю только текст или стикер.";
+
 pub mod emoji {
     pub const REACTION_PENDING: &str = "🤔";
     pub const REACTION_ACCEPTED: &str = "👍";

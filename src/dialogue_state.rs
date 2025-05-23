@@ -23,7 +23,7 @@ impl DialogueState {
     }
 
     pub fn get_sent_posts_count(&self) -> usize {
-        self.posts.values().filter(|post| post.sent_to.len() > 0).count()
+        self.posts.values().filter(|post| !post.sent_to.is_empty()).count()
     }
 
     pub fn find_post_key_by_message_id(&self, message_id: MessageId) -> Option<String> {

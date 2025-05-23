@@ -26,6 +26,7 @@ struct AdminDbRow {
     reply: String,
 }
 
+pub const STICKER_PREFIX: &str = "STICKER_ID:";
 const MEDIA_GROUP_AUTO_RESPONSE_EXPIRE: Duration = Duration::hours(1);
 
 impl AdminStorage {

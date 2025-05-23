@@ -14,7 +14,7 @@ pub struct AppSettings {
 impl AppSettings {
     pub fn from_env() -> Result<Self> {
         Ok(Self {
-            admins: env::var("BOT_ADMINS")?.split(',').map(|id| id.parse::<i64>().map(|id| ChatId(id))).collect::<Result<Vec<ChatId>, _>>()?,
+            admins: env::var("BOT_ADMINS")?.split(',').map(|id| id.parse::<i64>().map(ChatId)).collect::<Result<Vec<ChatId>, _>>()?,
             db_filename: env::var("DB_FILENAME").unwrap_or("db.sqlite".to_string()),
             admin_db_filename: env::var("ADMIN_DB_FILENAME").unwrap_or("admin_db.sqlite".to_string()),
             max_draft_posts: env::var("MAX_DRAFT_POSTS")

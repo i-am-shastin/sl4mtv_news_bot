@@ -10,6 +10,8 @@ pub mod command_handle;
 pub mod update_handle;
 pub mod bot_configuration;
 
+use crate::admin_storage::STICKER_PREFIX;
+
 use dptree::case;
 use log::{error, info, warn};
 
@@ -17,7 +19,7 @@ use std::sync::{atomic::{AtomicU32, Ordering}, Arc};
 use teloxide::{
     dispatching::dialogue::{
         self, serializer::Json, ErasedStorage, SqliteStorage, Storage
-    }, payloads::SendMessageSetters, prelude::*, types::{MediaKind, MediaText, MessageId, MessageKind, ReplyParameters}, utils::command::BotCommands
+    }, payloads::SendMessageSetters, prelude::*, types::{InputFile, MediaKind, MediaText, MessageId, MessageKind, ReplyParameters}, utils::command::BotCommands
 };
 use anyhow::{anyhow, Result};
 use chrono::{Duration, Utc};
@@ -168,8 +170,17 @@ async fn on_admin_message(
     bot_configuration: Arc<BotConfiguration>,
 ) -> HandlerResult {
     match msg.reply_to_message() {
-        Some(reply_to) if reply_to.reply_markup().is_some() && msg.text().is_some() => {
-            admin_storage.save_admin_message(admin_id, reply_to.id, msg.id, msg.text().unwrap()).await?;
+        Some(reply_to) if reply_to.reply_markup().is_some() => {
+            let content = if let Some(text) = msg.text() {
+                text.to_string()
+            } else if let Some(sticker) = msg.sticker() {
+                format!("{STICKER_PREFIX}{}", sticker.file.id)
+            } else {
+                bot.send_message(msg.chat.id, variants::UNSUPPORTED_REPLY_TYPE_TEXT).await?;
+                return Ok(());
+            };
+            
+            admin_storage.save_admin_message(admin_id, reply_to.id, msg.id, &content).await?;
             bot.react_to_message_with(msg.chat.id, msg.id, Reaction::Okay).await?;
         }
         _ => {
@@ -243,7 +254,7 @@ async fn callback_handler(
         return Ok(())
     };
 
-    if post.sent_to.len() > 0 {
+    if !post.sent_to.is_empty() {
         info!("User {} already sent post {} to admins", msg.chat.id, post_id);
         return Ok(());
     } else {
@@ -265,7 +276,7 @@ async fn callback_handler(
         };
 
         let Ok(message) = bot.send_message(admin_chat_id, post_text.clone())
-            .reply_parameters(ReplyParameters::new(forwarded_message_id.clone()))
+            .reply_parameters(ReplyParameters::new(*forwarded_message_id))
             .reply_markup(PostAction::get_keyboard_for_message(msg.chat.id, post_id)?)
             .await else {
                 error!("Failed to send message to admin {}", admin_chat_id);
@@ -281,14 +292,13 @@ async fn callback_handler(
     dialogue.update(new_state).await?;
 
     bot.react_to_message_with(msg.chat.id, message_id, Reaction::Pending).await?;
-    if bot.delete_message(msg.chat.id, msg.id).await.is_err() {
-        if bot.edit_message_reply_markup(msg.chat.id, msg.id).await.is_err() {
-            warn!("Unable to delete or update inline keyboard for message {} from user {}", msg.id, msg.chat.id);
-        }
+    if bot.delete_message(msg.chat.id, msg.id).await.is_err() && bot.edit_message_reply_markup(msg.chat.id, msg.id).await.is_err() {
+        warn!("Unable to delete or update inline keyboard for message {} from user {}", msg.id, msg.chat.id);
     }
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn admin_callback_handler(
     bot: &Bot,
     settings: &AppSettings,
@@ -354,8 +364,14 @@ async fn admin_callback_handler(
         }
     };
 
+    let mut sticker_id = None;
     if let Some((reply_msg_id, reply)) = admin_storage.get_admin_message(admin_id, msg.id).await? {
-        response_text = format!("{}\n\nКомментарий администратора: {}", response_text, reply);
+        if reply.starts_with(STICKER_PREFIX) {
+            sticker_id = Some(reply.strip_prefix(STICKER_PREFIX).unwrap().to_string());
+        } else {
+            response_text = format!("{}\n\nКомментарий администратора: {}", response_text, reply);
+        }
+
         if bot.delete_message(msg.chat.id, reply_msg_id).await.is_err() {
             if bot.react_to_message_with(msg.chat.id, reply_msg_id, Reaction::Salute).await.is_err() {
                 error!("Unable to delete or set reaction for message {} from admin {}", reply_msg_id, msg.chat.id);
@@ -368,7 +384,11 @@ async fn admin_callback_handler(
     bot.send_message(chat_id, response_text).await?;
     info!("User {chat_id} received response message");
 
-    return Ok(())
+    if let Some(id) = sticker_id {
+        bot.send_sticker(chat_id, InputFile::file_id(id)).await?;
+    }
+
+    Ok(())
 }
 
 async fn remove_post_from_user_state(
@@ -426,7 +446,7 @@ async fn try_set_auto_response(
         .collect::<Vec<_>>();
 
     for admin_chat_id in &settings.admins {
-        let mut auto_message = bot.send_message(admin_chat_id.clone(), &message_text).entities(updated_entities.clone());
+        let mut auto_message = bot.send_message(*admin_chat_id, &message_text).entities(updated_entities.clone());
         auto_message.link_preview_options = media_text.link_preview_options.clone();
 
         if auto_message.await.is_err() {
@@ -458,7 +478,7 @@ async fn on_forwarded_message(
 
     info!("Channel post received");
     if let Some(media_group_id) = msg.media_group_id() {
-        if admin_storage.has_media_group_response(&media_group_id) {
+        if admin_storage.has_media_group_response(media_group_id) {
             info!("Already responded to media group {}", media_group_id);
             return Ok(());
         }

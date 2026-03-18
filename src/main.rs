@@ -9,8 +9,10 @@ pub mod message;
 pub mod command_handle;
 pub mod update_handle;
 pub mod bot_configuration;
+pub mod user_locks;
 
 use crate::admin_storage::STICKER_PREFIX;
+use crate::user_locks::UserLocks;
 
 use dptree::case;
 use log::{error, info, warn};
@@ -74,6 +76,7 @@ async fn main() -> Result<()> {
 
     let mut bot_configuration = BotConfiguration::from_db(&admin_storage.pool).await?;
     let channel_posts_counter = Arc::new(AtomicU32::new(0));
+    let user_locks = Arc::new(UserLocks::new());
 
     if bot_configuration.should_apply_fix() {
         info!("Applying fix");
@@ -102,7 +105,7 @@ async fn main() -> Result<()> {
 
     info!("Initializing update dispatcher");
     Dispatcher::builder(bot, handler)
-        .dependencies(dptree::deps![storage, admin_storage, settings, Arc::new(bot_configuration), channel_posts_counter])
+        .dependencies(dptree::deps![storage, admin_storage, settings, Arc::new(bot_configuration), channel_posts_counter, user_locks])
         .enable_ctrlc_handler()
         .build()
         .dispatch()
@@ -117,6 +120,7 @@ async fn on_message(
     dialogue: MyDialogue,
     state: DialogueState,
     msg: Message,
+    user_locks: Arc<UserLocks>,
     admin_storage: Arc<AdminStorage>,
     settings: AppSettings,
     bot_configuration: Arc<BotConfiguration>,
@@ -138,6 +142,32 @@ async fn on_message(
         return on_admin_message(bot, &msg, user.id, admin_storage, bot_configuration).await;
     }
 
+    let user_lock = user_locks.acquire(msg.chat.id.0).await;
+    let _user_lock = user_lock.lock().await;
+
+    let mut next_state = state.clone();
+    let message_age = Utc::now() - msg.date;
+
+    let is_old_message = message_age > Duration::hours(settings.offline_notification_hours);
+    if is_old_message {
+        info!("User {} sent an old message {} ago", msg.chat.id, message_age);
+
+        let should_send = state.last_offline_notification_date
+            .map_or(true, |last_date| {
+                Utc::now() - last_date > Duration::hours(settings.offline_notification_hours)
+            });
+        
+        if should_send {
+            info!("Sending user {} apologies", msg.chat.id);
+            bot.send_message(msg.chat.id, variants::BOT_WAS_OFFLINE_MESSAGE()).await?;
+            
+            next_state.last_offline_notification_date = Some(Utc::now());
+            dialogue.update(next_state.clone()).await?;
+        } else {
+            info!("Apologies already sent to user {}", msg.chat.id);
+        }
+    }
+
     if !msg.is_supported_type() {
         bot.send_message(msg.chat.id, variants::INVALID_INPUT_TYPE_MESSAGE()).await?;
         return Ok(())
@@ -149,7 +179,7 @@ async fn on_message(
         return Ok(())
     }
 
-    let (new_state, reply_to) = state.process_user_message(&msg).await;
+    let (new_state, reply_to) = next_state.process_user_message(&msg).await;
     dialogue.update(new_state).await?;
 
     if let Some(message_id) = reply_to {

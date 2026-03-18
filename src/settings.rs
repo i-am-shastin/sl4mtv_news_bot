@@ -9,6 +9,7 @@ pub struct AppSettings {
     pub admin_db_filename: String,
     pub max_draft_posts: usize,
     pub max_sent_posts: usize,
+    pub offline_notification_hours: i64,
 }
 
 impl AppSettings {
@@ -25,6 +26,10 @@ impl AppSettings {
                 .ok()
                 .and_then(|v| v.parse::<usize>().ok())
                 .unwrap_or(3),
+            offline_notification_hours: env::var("OFFLINE_NOTIFICATION_HOURS")
+                .ok()
+                .and_then(|v| v.parse::<i64>().ok())
+                .unwrap_or(48),
         })
     }
 

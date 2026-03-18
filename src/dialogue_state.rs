@@ -11,6 +11,7 @@ pub struct DialogueState {
     pub posts: HashMap<String, Post>,
     pub last_report_request_date: Option<DateTime<Utc>>,
     pub bot_is_banned: bool,
+    pub last_offline_notification_date: Option<DateTime<Utc>>,
 }
 
 impl DialogueState {

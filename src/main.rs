@@ -14,7 +14,7 @@ pub mod user_locks;
 use crate::admin_storage::STICKER_PREFIX;
 use crate::user_locks::UserLocks;
 
-use actix_web::{App, HttpResponse, HttpServer, get, web};
+use actix_web::{App, HttpResponse, HttpServer, get, web::Data};
 use dptree::case;
 use log::{error, info, warn};
 
@@ -53,7 +53,7 @@ const LOG4RS_CONFIG: &str = if cfg!(debug_assertions) {
 };
 
 #[get("/health")]
-async fn health(bot: web::Data<Arc<Bot>>) -> HttpResponse {
+async fn health(bot: Data<Bot>) -> HttpResponse {
     match bot.get_me().await {
         Ok(_) => {
             info!("Health check: OK - Telegram API is reachable");
@@ -125,9 +125,9 @@ async fn main() -> Result<()> {
     
     // Start health check server in background
     info!("Starting health check server on port {}", settings.health_check_port);
-    let app_data = web::Data::new(bot.clone());
+    let bot_clone = bot.clone();
     let server = HttpServer::new(move || {
-        App::new().app_data(app_data.clone())
+        App::new().app_data(Data::new(bot_clone.clone())).service(health)
     })
     .bind(("0.0.0.0", settings.health_check_port))?
     .run();

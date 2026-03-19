@@ -1,3 +1,2 @@
-cargo build --release;
-sh stop.sh;
-cargo run --release &
+#!/bin/bash
+sudo systemctl restart sl4mtv-bot

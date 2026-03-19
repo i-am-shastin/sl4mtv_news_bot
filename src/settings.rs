@@ -10,6 +10,7 @@ pub struct AppSettings {
     pub max_draft_posts: usize,
     pub max_sent_posts: usize,
     pub offline_notification_hours: i64,
+    pub health_check_port: u16,
 }
 
 impl AppSettings {
@@ -30,6 +31,10 @@ impl AppSettings {
                 .ok()
                 .and_then(|v| v.parse::<i64>().ok())
                 .unwrap_or(48),
+            health_check_port: env::var("HEALTH_CHECK_PORT")
+                .ok()
+                .and_then(|v| v.parse::<u16>().ok())
+                .unwrap_or(50001),
         })
     }
 

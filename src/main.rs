@@ -14,6 +14,7 @@ pub mod user_locks;
 use crate::admin_storage::STICKER_PREFIX;
 use crate::user_locks::UserLocks;
 
+use actix_web::{App, HttpResponse, HttpServer, get, web};
 use dptree::case;
 use log::{error, info, warn};
 
@@ -51,6 +52,20 @@ const LOG4RS_CONFIG: &str = if cfg!(debug_assertions) {
     "log4rs.yaml"
 };
 
+#[get("/health")]
+async fn health(bot: web::Data<Arc<Bot>>) -> HttpResponse {
+    match bot.get_me().await {
+        Ok(_) => {
+            info!("Health check: OK - Telegram API is reachable");
+            HttpResponse::Ok().finish()
+        }
+        Err(e) => {
+            error!("Health check: FAILED - Telegram API unreachable: {}", e);
+            HttpResponse::ServiceUnavailable().finish()
+        }
+    }
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
     log4rs::init_file(LOG4RS_CONFIG, Default::default())?;
@@ -68,7 +83,10 @@ async fn main() -> Result<()> {
         return Err(anyhow!("No admins found. Do you have ADMIN_CHAT_ID in environment variables?"));
     }
 
-    let storage: MyStorage = SqliteStorage::open(&settings.db_filename, Json).await.unwrap().erase();
+    let storage: MyStorage = SqliteStorage::open(&settings.db_filename, Json)
+        .await
+        .map_err(|e| anyhow!("Failed to open database {}: {}", settings.db_filename, e))?
+        .erase();
     info!("Bot admins are: {:?}, database loaded from: {}", settings.admins, settings.db_filename);
 
     let admin_storage = AdminStorage::open(&settings.admin_db_filename).await?;
@@ -104,6 +122,23 @@ async fn main() -> Result<()> {
         .endpoint(update_handle::on_update);
 
     info!("Initializing update dispatcher");
+    
+    // Start health check server in background
+    info!("Starting health check server on port {}", settings.health_check_port);
+    let app_data = web::Data::new(bot.clone());
+    let server = HttpServer::new(move || {
+        App::new().app_data(app_data.clone())
+    })
+    .bind(("0.0.0.0", settings.health_check_port))?
+    .run();
+
+    tokio::spawn(async move {
+        if let Err(e) = server.await {
+            error!("Health check server error: {}", e);
+        }
+    });
+    
+    // Run bot dispatcher
     Dispatcher::builder(bot, handler)
         .dependencies(dptree::deps![storage, admin_storage, settings, Arc::new(bot_configuration), channel_posts_counter, user_locks])
         .enable_ctrlc_handler()

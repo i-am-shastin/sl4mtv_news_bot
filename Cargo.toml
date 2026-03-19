@@ -17,3 +17,4 @@ chrono = { version = "0.4.39", features = ["serde"] }
 strum = { version = "0.26.3", features = ["derive"] }
 rand = "0.8.5"
 sqlx = { version = "0.8.2", features = ["chrono", "runtime-tokio", "tls-native-tls"] }
+actix-web = "4"
